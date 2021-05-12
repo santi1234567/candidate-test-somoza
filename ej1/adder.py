@@ -1,57 +1,152 @@
-from typing import List
-
-from nmigen import signed
-from nmigen import Elaboratable, Module, Signal
-from nmigen.sim import Simulator, Delay
+from nmigen import *
+from nmigen_cocotb import run
 from nmigen.build import Platform
-from nmigen.cli import main_parser, main_runner
+import cocotb
+from cocotb.triggers import RisingEdge, Timer
+from cocotb.clock import Clock
+from random import getrandbits
+
+
+#Copiada de example.py | Stream define el flujo de una entrada/salida con sus respectivas señales y tiene algunas funcionalidades extras.
+#Cambie width por n_bits y data paso a ser signada.
+class Stream(Record):
+    def __init__(self, n_bits, **kwargs):
+        Record.__init__(self, [('data', signed(n_bits)), ('valid', 1), ('ready', 1)], **kwargs)
+
+    def accepted(self):
+        return self.valid & self.ready
+
+    class Driver:
+        def __init__(self, clk, dut, prefix):
+            self.clk = clk
+            self.data = getattr(dut, prefix + 'data')
+            self.valid = getattr(dut, prefix + 'valid')
+            self.ready = getattr(dut, prefix + 'ready')
+
+        async def send(self, data):
+            self.valid <= 1
+            for d in data:
+                self.data <= d
+                await RisingEdge(self.clk)
+                while self.ready.value == 0:
+                    await RisingEdge(self.clk)
+            self.valid <= 0
+
+        async def recv(self, count):
+            self.ready <= 1
+            data = []
+            for _ in range(count):
+                await RisingEdge(self.clk)
+                while self.valid.value == 0:
+                    await RisingEdge(self.clk)
+                data.append(self.data.value.integer)
+            self.ready <= 0
+            return data
+
+
 
 class Adder(Elaboratable):
-    def __init__(self,N_bits):#, arg):
-        self.a_data = Signal(signed(N_bits))
-        self.b_data = Signal(signed(N_bits))
-        self.r_data = Signal(signed(N_bits))
+    def __init__(self,n_bits):#, arg):
+        self.a = Stream(n_bits, name='a')
+        self.b = Stream(n_bits, name='b')
+        self.r = Stream(n_bits, name='r')
 
 
 
     def elaborate(self,platform:Platform) -> Module:
+        # m = Module()
+        #
+        # m.d.comb += self.r_data.eq(self.a_data + self.b_data)
+        #
+        # return m
         m = Module()
+        sync = m.d.sync
+        comb = m.d.comb
+        comb += self.b.data.eq(1)
+        #inicializo la salida cero para esperar a que las entradas esten habilitadas
+        with m.If(self.r.accepted()):
+            sync += self.r.valid.eq(0)
 
-        m.d.comb += self.r_data.eq(self.a_data + self.b_data)
-
+        with m.If(self.a.accepted()&self.b.accepted()):
+            sync += [
+                self.r.valid.eq(1),
+                self.r.data.eq(self.a.data + self.b.data)
+            ]
+        comb += self.a.ready.eq((~self.r.valid) | (self.r.accepted()))
+        comb += self.b.ready.eq((~self.r.valid) | (self.r.accepted()))
         return m
 
-    def ports(self) -> List[Signal]:
-        return []
+async def init_test(dut):
+    cocotb.fork(Clock(dut.clk, 10, 'ns').start())
+    dut.rst <= 1
+    await RisingEdge(dut.clk)
+    await RisingEdge(dut.clk)
+    dut.rst <= 0
 
-if __name__=="__main__":
-    parser = main_parser()
-    args = parser.parse_args()
+@cocotb.test()
+async def burst(dut):
+    await init_test(dut)
 
-    N_bits = 8
+    stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
+    stream_input_b = Stream.Driver(dut.clk, dut, 'b__')
+    stream_output = Stream.Driver(dut.clk, dut, 'r__')
 
-    m = Module()
-    m.submodules.adder = adder = Adder(N_bits)
+    N = 100
+    width = len(dut.a__data)
+    mask = int('1' * width, 2)
 
-    #main_runner(parser,args,m,ports=[]+adder.ports())
+    data_1 = [getrandbits(width) for _ in range(N)]
+    data_2 = [getrandbits(width) for _ in range(N)]
 
-    x = Signal(signed(N_bits))
-    y = Signal(signed(N_bits))
-    m.d.comb += adder.a_data.eq(x)
-    m.d.comb += adder.b_data.eq(y)
+    expected = []
+    for d in range(N):
+        expected.append(data_1(d)+data_2(d))
+    cocotb.fork(stream_input_a.send(data_1))
+    cocotb.fork(stream_input_b.send(data_2))
 
-    sim = Simulator(m)
+    recved = await stream_output.recv(N)
+    assert recved == expected
 
-    def process():
-        yield x.eq(0x00)
-        yield y.eq(0x00)
-        yield Delay(1e-6)
-        yield x.eq(0xFF)
-        yield y.eq(0xFF)
-        yield Delay(1e-6)
-        yield x.eq(0x00)
-        yield Delay(1e-6)
-
-    sim.add_process(process)
-    with sim.write_vcd("test.vcd","test.gtkw", traces=[x,y] + adder.ports()):
-        sim.run()
+# if __name__=="__main__":
+#     parser = main_parser()
+#     args = parser.parse_args()
+#
+#     N_bits = 8
+#
+#     m = Module()
+#     m.submodules.adder = adder = Adder(N_bits)
+#
+#     #main_runner(parser,args,m,ports=[]+adder.ports())
+#
+#     x = Signal(signed(N_bits))
+#     y = Signal(signed(N_bits))
+#     m.d.comb += adder.a_data.eq(x)
+#     m.d.comb += adder.b_data.eq(y)
+#
+#     sim = Simulator(m)
+#
+#     def process():
+#         yield x.eq(0x00)
+#         yield y.eq(0x00)
+#         yield Delay(1e-6)
+#         yield x.eq(0xFF)
+#         yield y.eq(0xFF)
+#         yield Delay(1e-6)
+#         yield x.eq(0x00)
+#         yield Delay(1e-6)
+#
+#     sim.add_process(process)
+#     with sim.write_vcd("test.vcd","test.gtkw", traces=[x,y] + adder.ports()):
+#         sim.run()
+if __name__ == '__main__':
+    core = Adder(2)
+    run(
+        core, 'example',
+        ports=
+        [
+            *list(core.a.fields.values()),
+            *list(core.b.fields.values()),
+            *list(core.r.fields.values())
+        ],
+        vcd_file='adder.vcd'
+    )
