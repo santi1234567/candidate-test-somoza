@@ -1,0 +1,6 @@
+[dumpfile] "/home/santiago/candidate-test-somoza/ej1/test.vcd"
+[dumpfile_size] 510
+[treeopen] top.
+@22
+top.x[7:0]
+top.y[7:0]
