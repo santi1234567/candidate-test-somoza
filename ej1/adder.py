@@ -86,9 +86,9 @@ async def init_test(dut):
 @cocotb.test()
 async def burst(dut):
     await init_test(dut)
-
-    stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
     stream_input_b = Stream.Driver(dut.clk, dut, 'b__')
+    stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
+
     stream_output = Stream.Driver(dut.clk, dut, 'r__')
 
     N = 100
@@ -97,14 +97,20 @@ async def burst(dut):
 
     data_1 = [getrandbits(width) for _ in range(N)]
     data_2 = [getrandbits(width) for _ in range(N)]
-
     expected = []
-    for d in range(N):
-        expected.append(data_1(d)+data_2(d))
+
+    for d in range(1,N+1):
+    	expected.append(data_1[d-1]+data_2[d-1])
+    	
+    	#Trunco a la cantidad de bits que se usa cuando hay overflow
+    	expected[-1]= (expected[-1]- 2**width) if expected[-1] > (2**width-1) else expected[-1]
+    	#print(hex(data_1[d-1]),"+",hex(data_2[d-1]),"=",hex(expected[-1]))
     cocotb.fork(stream_input_a.send(data_1))
     cocotb.fork(stream_input_b.send(data_2))
 
     recved = await stream_output.recv(N)
+    #print(hex(expected[0]),hex(expected[1]), hex(expected[-1]))
+    #print(hex(recved[0]),hex(recved[1]), hex(recved[-1]))
     assert recved == expected
 
 # if __name__=="__main__":
@@ -139,9 +145,9 @@ async def burst(dut):
 #     with sim.write_vcd("test.vcd","test.gtkw", traces=[x,y] + adder.ports()):
 #         sim.run()
 if __name__ == '__main__':
-    core = Adder(2)
+    core = Adder(5)
     run(
-        core, 'example',
+        core, 'adder',
         ports=
         [
             *list(core.a.fields.values()),
