@@ -62,7 +62,9 @@ class Adder(Elaboratable):
         m = Module()
         sync = m.d.sync
         comb = m.d.comb
-        comb += self.b.data.eq(1)
+        comb += self.b.data.eq(0)
+
+        comb += self.a.data.eq(0)
         #inicializo la salida cero para esperar a que las entradas esten habilitadas
         with m.If(self.r.accepted()):
             sync += self.r.valid.eq(0)
@@ -85,67 +87,102 @@ async def init_test(dut):
 
 @cocotb.test()
 async def burst(dut):
-    await init_test(dut)
-    stream_input_b = Stream.Driver(dut.clk, dut, 'b__')
-    stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
+	await init_test(dut)
+	stream_input_b = Stream.Driver(dut.clk, dut, 'b__')
+	stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
 
-    stream_output = Stream.Driver(dut.clk, dut, 'r__')
+	stream_output = Stream.Driver(dut.clk, dut, 'r__')
 
-    N = 100
-    width = len(dut.a__data)
-    mask = int('1' * width, 2)
+	N = 100
+	width = len(dut.a__data)
+	mask = int('1' * width, 2)
 
-    data_1 = [getrandbits(width) for _ in range(N)]
-    data_2 = [getrandbits(width) for _ in range(N)]
-    expected = []
+	data_1 = [getrandbits(width) for _ in range(N)]
+	data_2 = [getrandbits(width) for _ in range(N)]
+	expected = []
 
-    for d in range(1,N+1):
-    	expected.append(data_1[d-1]+data_2[d-1])
-    	
-    	#Trunco a la cantidad de bits que se usa cuando hay overflow
-    	expected[-1]= (expected[-1]- 2**width) if expected[-1] > (2**width-1) else expected[-1]
-    	#print(hex(data_1[d-1]),"+",hex(data_2[d-1]),"=",hex(expected[-1]))
-    cocotb.fork(stream_input_a.send(data_1))
-    cocotb.fork(stream_input_b.send(data_2))
+	for d in range(1,N+1):
+		expected.append(data_1[d-1]+data_2[d-1])
+		
+		#Trunco a la cantidad de bits que se usa cuando hay overflow
+		expected[-1]= (expected[-1]- 2**width) if expected[-1] > (2**width-1) else expected[-1]
+		#print(hex(data_1[d-1]),"+",hex(data_2[d-1]),"=",hex(expected[-1]))
+	cocotb.fork(stream_input_a.send(data_1))
+	cocotb.fork(stream_input_b.send(data_2))
 
-    recved = await stream_output.recv(N)
-    #print(hex(expected[0]),hex(expected[1]), hex(expected[-1]))
-    #print(hex(recved[0]),hex(recved[1]), hex(recved[-1]))
-    assert recved == expected
+	recved = await stream_output.recv(N)
+	#print(hex(expected[0]),hex(expected[1]), hex(expected[-1]))
+	#print(hex(recved[0]),hex(recved[1]), hex(recved[-1]))
+	assert recved == expected
 
-# if __name__=="__main__":
-#     parser = main_parser()
-#     args = parser.parse_args()
-#
-#     N_bits = 8
-#
-#     m = Module()
-#     m.submodules.adder = adder = Adder(N_bits)
-#
-#     #main_runner(parser,args,m,ports=[]+adder.ports())
-#
-#     x = Signal(signed(N_bits))
-#     y = Signal(signed(N_bits))
-#     m.d.comb += adder.a_data.eq(x)
-#     m.d.comb += adder.b_data.eq(y)
-#
-#     sim = Simulator(m)
-#
-#     def process():
-#         yield x.eq(0x00)
-#         yield y.eq(0x00)
-#         yield Delay(1e-6)
-#         yield x.eq(0xFF)
-#         yield y.eq(0xFF)
-#         yield Delay(1e-6)
-#         yield x.eq(0x00)
-#         yield Delay(1e-6)
-#
-#     sim.add_process(process)
-#     with sim.write_vcd("test.vcd","test.gtkw", traces=[x,y] + adder.ports()):
-#         sim.run()
+###testeo todas las posibles combinaciones de entrada y salida. Es un test bastante pesado para N grande
+@cocotb.test()
+async def todas(dut):
+	await burst(dut)
+
+	stream_input_b = Stream.Driver(dut.clk, dut, 'b__')
+
+	stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
+
+	stream_output = Stream.Driver(dut.clk, dut, 'r__')
+
+
+	width = len(dut.a__data) 
+	mask = int('1' * width, 2)    
+	data_1=[]
+	data_2=[]
+	for y in range(2**width):
+		for x in range(2**width):
+			data_1.append(y)
+			data_2.append(x)
+
+	expected = []
+
+	for d in range(1,2**(2*width)+1):
+		expected.append(data_1[d-1]+data_2[d-1])
+		
+		#Trunco a la cantidad de bits que se usa cuando hay overflow
+		expected[-1]= (expected[-1]- 2**width) if expected[-1] > (2**width-1) else expected[-1]
+		#print(hex(data_1[d-1]),"+",hex(data_2[d-1]),"=",hex(expected[-1]))
+	cocotb.fork(stream_input_a.send(data_1))
+	cocotb.fork(stream_input_b.send(data_2))
+
+	recved = await stream_output.recv(2**(2*width))
+
+
+	stream_input_b = Stream.Driver(dut.clk, dut, 'b__')
+
+	stream_input_a = Stream.Driver(dut.clk, dut, 'a__')
+
+	stream_output = Stream.Driver(dut.clk, dut, 'r__')
+
+  
+	data_1=[]
+	data_2=[]
+	for y in range(2**width):
+		for x in range(2**width):
+			data_2.append(y)
+			data_1.append(x)
+
+	expected = []
+
+	for d in range(1,2**(2*width)+1):
+		expected.append(data_1[d-1]+data_2[d-1])
+		
+		#Trunco a la cantidad de bits que se usa cuando hay overflow
+		expected[-1]= (expected[-1]- 2**width) if expected[-1] > (2**width-1) else expected[-1]
+		#print(hex(data_1[d-1]),"+",hex(data_2[d-1]),"=",hex(expected[-1]))
+	cocotb.fork(stream_input_a.send(data_1))
+	cocotb.fork(stream_input_b.send(data_2))
+
+	recved = await stream_output.recv(2**(2*width))
+	#print(hex(expected[0]),hex(expected[1]), hex(expected[-1]))
+	#print(hex(recved[0]),hex(recved[1]), hex(recved[-1]))
+	assert recved == expected
+
+
 if __name__ == '__main__':
-    core = Adder(5)
+    core = Adder(4)
     run(
         core, 'adder',
         ports=
