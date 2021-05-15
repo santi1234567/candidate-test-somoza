@@ -12,10 +12,13 @@ file=open(file_name)
 code=file.read()
 file.close()
 
+#regex para identificar bloque de codigo de inicializacion de memoria inline
 pattern1= r'  reg \[(.*)\] (\S*) \[(.*)\];\n  initial begin\n((    \S*\[\S*\] = \S*;\n)*)  end\n'
 
+#regex para quedarse nada mas con las direcciones de memoria
 pattern2= r'h(.*?);'
 
+#regex para buscar el bloque de codigo a reemplazar
 pattern3= r'  initial begin\n((    \S*\[\S*\] = \S*;\n)*)  end'
 
 block=re.findall(pattern1,code)
