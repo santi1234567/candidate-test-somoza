@@ -16,10 +16,9 @@ class Adder(Elaboratable):
         m = Module()
         sync = m.d.sync
         comb = m.d.comb
-        comb += self.b.data.eq(0)
-
-        comb += self.a.data.eq(0)
-
+        # El sumador se inicializa listo para funcionar
+        comb += self.a.ready.eq(1)
+        comb += self.b.ready.eq(1)
 
 
         with m.If(self.a.accepted()&self.b.accepted()): #si esta todo bien en las entradas, se saca una salida
@@ -32,7 +31,5 @@ class Adder(Elaboratable):
         	sync += self.r.data.eq(0)
 
 
-        comb += self.a.ready.eq((~self.r.valid) | (self.r.accepted()))
-        comb += self.b.ready.eq((~self.r.valid) | (self.r.accepted()))
         return m
 

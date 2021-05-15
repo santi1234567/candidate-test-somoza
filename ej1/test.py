@@ -54,7 +54,7 @@ async def todas_las_comb(dut):
 
 
 	width = len(dut.a__data) 
-	mask = int('1' * width, 2)    
+
 	data_a=[]
 	data_b=[]
 	#lleno las entradas con todas las posibles combinaciones
